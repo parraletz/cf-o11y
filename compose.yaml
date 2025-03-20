@@ -1,0 +1,82 @@
+services:
+  init:
+    image: &tempoImage grafana/tempo:latest
+    user: root
+    entrypoint:
+      - "chown"
+      - "10001:10001"
+      - "/var/tempo"
+    volumes:
+      - ./tempo-data:/var/tempo
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    volumes:
+      - ./otel-config.yaml:/etc/otel/config.yaml
+    command:
+      - '--config=/etc/otel/config.yaml'
+    ports:
+      - "4317:4317" #grpc
+      - "4318:4318" #http
+      - "9464:9464"
+    depends_on:
+      - loki
+      - prometheus
+      - tempo
+      - jaeger
+    networks:
+      - cfnet
+  tempo:
+    image: grafana/tempo:latest
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml
+      - ./tempo/tempo-data:/var/tempo
+    ports:
+      - "3200:3200"
+      - "4317"
+    depends_on:
+      - init
+    networks:
+      - cfnet
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - cfnet
+  loki:
+    image: grafana/loki:main
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - cfnet
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - 6831
+      - "16686:16686"
+      - 4317
+    networks:
+      - cfnet
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_BASIC_ENABLED=false
+      - GF_FEATURE_TOGGLES_ENABLE=accessControlOnCall
+      - GF_INSTALL_PLUGINS=https://storage.googleapis.com/integration-artifacts/grafana-lokiexplore-app/grafana-lokiexplore-app-latest.zip;grafana-lokiexplore-app
+    ports:
+      - 3002:3000/tcp
+    volumes:
+      - ./grafana:/etc/grafana/provisioning
+    networks:
+      - cfnet
+
+networks:
+  cfnet:
